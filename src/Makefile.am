@@ -92,7 +92,8 @@ parole_LDADD =						   	\
 	$(GST_VIDEO_LIBS)			\
 	$(GST_INTERFACES_LIBS)			\
 	$(TAGLIBC_LIBS)				\
-	$(LIBX11_LIBS)
+	$(LIBX11_LIBS)				\
+	-lm
 
 parole_glib_enum_headers =			\
 	parole-conf.h				\

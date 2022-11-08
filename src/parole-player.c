@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #ifdef HAVE_XF86_KEYSYM
 #include <X11/XF86keysym.h>
@@ -1814,18 +1815,12 @@ parole_player_media_tag_cb(ParoleGst *gst, const ParoleStream *stream, ParolePla
 
         if ( album ) {
             if ( track <= num_tracks ) {
-                if ( num_tracks < 10 ) {
                 track_str = g_strdup_printf(
-                                "%d/%d",
-                                track, num_tracks);
-                } else {
-                track_str = g_strdup_printf(
-                                "%.2d/%.2d",
-                                track, num_tracks);
-                }
+                                "%.*u/%u",
+                                (int)(log10(num_tracks) + 1), track, num_tracks);
             } else {
                 track_str = g_strdup_printf(
-                                "#%d",
+                                "#%u",
                                 track);
             }
 

@@ -375,7 +375,7 @@ struct ParolePlayerPrivate {
     GtkFileFilter      *video_filter;
     GtkRecentManager   *recent;
 
-    gdouble             last_volume;
+    gint                last_volume;
 
     GtkWidget          *window;
     GtkWidget          *playlist_nt;
@@ -2370,14 +2370,18 @@ parole_player_volume_scroll_event_cb(GtkWidget *widget, GdkEventScroll *ev, Paro
 
 void
 parole_player_volume_value_changed_cb(GtkScaleButton *widget, gdouble value, ParolePlayer *player) {
+    gint volume = (gint)(value * 100);
+
     parole_player_change_volume(player, value);
 
-    /* Do not update the value unless it has changed! */
-    if ((int)(value*100) != (int)(player->priv->last_volume*100)) {
-        player->priv->last_volume = value;
+    /* Do not update the value unless it has changed! Since we use integer truncation
+     * everywhere in the code, we are only accurate to within one unit. A higher precision
+     * would require the use of rounding. */
+    if (ABS(volume - player->priv->last_volume) > 1) {
+        player->priv->last_volume = volume;
         if ( value > 0.0 )
             g_object_set(G_OBJECT(player->priv->conf),
-                          "volume", (gint)(value * 100),
+                          "volume", volume,
                           NULL);
     }
 }
@@ -3613,7 +3617,7 @@ parole_player_init(ParolePlayer *player) {
 
     // Add a close button to the Infobar
     infobar_close = gtk_button_new_with_label(_("Close"));
-    close_icon = gtk_image_new_from_icon_name("gtk-close", GTK_ICON_SIZE_BUTTON);
+    close_icon = gtk_image_new_from_icon_name("window-close-symbolic", GTK_ICON_SIZE_BUTTON);
     gtk_button_set_image(GTK_BUTTON(infobar_close), close_icon);
     g_signal_connect(infobar_close, "clicked",
               G_CALLBACK(on_infobar_close_clicked), player);

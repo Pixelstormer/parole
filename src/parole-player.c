@@ -29,13 +29,15 @@
 #include <string.h>
 #include <math.h>
 
+#ifdef HAVE_LIBX11
 #ifdef HAVE_XF86_KEYSYM
 #include <X11/XF86keysym.h>
 #endif
-
 #include <X11/Xatom.h>
-
 #include <gdk/gdkx.h>
+#include "src/common/parole-screensaver.h"
+#endif
+
 #include <gdk/gdkkeysyms.h>
 #include <gtk/gtk.h>
 
@@ -49,7 +51,6 @@
 
 #include "src/common/parole-common.h"
 #include "src/common/parole-rc-utils.h"
-#include "src/common/parole-screensaver.h"
 #include "src/common/parole-powermanager.h"
 
 #include "src/dbus/parole-dbus.h"
@@ -358,7 +359,9 @@ struct ParolePlayerPrivate {
     DBusGConnection    *bus;
     ParoleMediaList    *list;
     ParoleDisc         *disc;
+#ifdef HAVE_LIBX11
     ParoleScreenSaver  *screen_saver;
+#endif
     GDBusConnection    *connection;
     guint32             inhibit_cookie;
 
@@ -1531,6 +1534,7 @@ parole_player_play_prev(ParolePlayer *player) {
     parole_gst_stop(PAROLE_GST(player->priv->gst));
 }
 
+#ifdef HAVE_LIBX11
 static void
 parole_player_reset_saver_changed(ParolePlayer *player, const ParoleStream *stream) {
     gboolean reset_saver;
@@ -1565,13 +1569,17 @@ parole_player_reset_saver_changed(ParolePlayer *player, const ParoleStream *stre
         player->priv->inhibit_cookie = 0;
     }
 }
+#endif
 
 static void
 parole_player_media_state_cb(ParoleGst *gst, const ParoleStream *stream, ParoleState state, ParolePlayer *player) {
     PAROLE_DEBUG_ENUM("State callback", state, PAROLE_ENUM_TYPE_STATE);
 
     player->priv->state = state;
-    parole_player_reset_saver_changed(player, stream);
+#ifdef HAVE_LIBX11
+    if (player->priv->screen_saver != NULL)
+        parole_player_reset_saver_changed(player, stream);
+#endif
 
     if ( state == PAROLE_STATE_PLAYING ) {
         parole_player_playing(player, stream);
@@ -1715,7 +1723,10 @@ parole_player_range_value_changed(GtkRange *range, ParolePlayer *player) {
 static void
 parole_player_error_cb(ParoleGst *gst, const gchar *error, ParolePlayer *player) {
     parole_dialog_error(GTK_WINDOW(player->priv->window), _("GStreamer backend error"), error);
-    parole_screen_saver_uninhibit(player->priv->screen_saver, GTK_WINDOW(player->priv->window));
+#ifdef HAVE_LIBX11
+    if (player->priv->screen_saver != NULL)
+        parole_screen_saver_uninhibit(player->priv->screen_saver, GTK_WINDOW(player->priv->window));
+#endif
     parole_player_stopped(player);
 }
 
@@ -2425,7 +2436,10 @@ parole_player_finalize(GObject *object) {
     g_object_unref(player->priv->conf);
     g_object_unref(player->priv->video_filter);
     g_object_unref(player->priv->disc);
-    g_object_unref(player->priv->screen_saver);
+#ifdef HAVE_LIBX11
+    if (player->priv->screen_saver != NULL)
+        g_object_unref(player->priv->screen_saver);
+#endif
     g_object_unref(player->priv->connection);
 
     if ( player->priv->client_id )
@@ -2541,14 +2555,16 @@ parole_player_class_init(ParolePlayerClass *klass) {
  * while playing movies or not.
  *
  */
+#ifdef HAVE_LIBX11
 static void
 parole_player_reset_saver_changed_cb(ParolePlayer *player) {
-    const ParoleStream *stream;
-
-    stream = parole_gst_get_stream(PAROLE_GST(player->priv->gst));
-    TRACE("Reset saver configuration changed");
-    parole_player_reset_saver_changed(player, stream);
+    if (player->priv->screen_saver != NULL) {
+        const ParoleStream *stream = parole_gst_get_stream(PAROLE_GST(player->priv->gst));
+        TRACE("Reset saver configuration changed");
+        parole_player_reset_saver_changed(player, stream);
+    }
 }
+#endif
 
 static gboolean
 parole_player_handle_key_value(guint keyval, guint state, ParolePlayer *player) {
@@ -3073,6 +3089,7 @@ parole_player_window_notify_is_active(ParolePlayer *player) {
     }
 }
 
+#ifdef HAVE_LIBX11
 /**
  *
  * Sets the _NET_WM_WINDOW_OPACITY_LOCKED wm hint
@@ -3109,6 +3126,7 @@ parole_player_set_wm_opacity_hint(GtkWidget *widget) {
                      (guchar *) &mode,
                      1);
 }
+#endif
 
 static void
 parole_player_init(ParolePlayer *player) {
@@ -3169,9 +3187,6 @@ parole_player_init(ParolePlayer *player) {
     player->priv->conf = parole_conf_new();
     player->priv->settings_dialog = parole_conf_dialog_new();
 
-    g_signal_connect_swapped(player->priv->conf, "notify::reset-saver",
-            G_CALLBACK(parole_player_reset_saver_changed_cb), player);
-
     /* ParoleGst */
     player->priv->gst = parole_gst_new(player->priv->conf);
 
@@ -3181,14 +3196,22 @@ parole_player_init(ParolePlayer *player) {
             G_CALLBACK(parole_player_disc_selected_cb), player);
 
     /* ParoleButton */
-    #ifdef HAVE_XF86_KEYSYM
+#ifdef HAVE_XF86_KEYSYM
+    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
         player->priv->button = parole_button_new();
         g_signal_connect(player->priv->button, "button-pressed",
                 G_CALLBACK(parole_player_button_pressed_cb), player);
-    #endif
+    }
+#endif
 
     /* ParoleScreenSaver */
-    player->priv->screen_saver = parole_screen_saver_new();
+#ifdef HAVE_LIBX11
+    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+        player->priv->screen_saver = parole_screen_saver_new();
+        g_signal_connect_swapped(player->priv->conf, "notify::reset-saver",
+                G_CALLBACK(parole_player_reset_saver_changed_cb), player);
+    }
+#endif
 
     /* PowerManagement Inhibit cookie */
     player->priv->connection = parole_power_manager_dbus_init ();
@@ -3743,7 +3766,10 @@ parole_player_init(ParolePlayer *player) {
     if (always_hide_menubar == TRUE)
         parole_player_hide_menubar_cb(NULL, player);
 
-    parole_player_set_wm_opacity_hint(player->priv->window);
+#ifdef HAVE_LIBX11
+    if (GDK_IS_X11_DISPLAY(gdk_display_get_default()))
+        parole_player_set_wm_opacity_hint(player->priv->window);
+#endif
 }
 
 ParolePlayer *
